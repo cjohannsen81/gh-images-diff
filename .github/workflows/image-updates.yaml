@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 env:
-  IMAGE: cgr.dev/datatomix.com/python
+  IMAGE: cgr.dev/chainguard/python
 
 jobs:
   diff:
@@ -39,7 +39,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: cgr.dev
-          username: _token
+          username: ${{ secrets.CHAINGUARD_USERNAME }}
           password: ${{ secrets.CHAINGUARD_TOKEN }}
 
       # ── Resolve the current live digest ────────────────────────────────────
