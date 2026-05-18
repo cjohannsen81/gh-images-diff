@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 env:
-  IMAGE: cgr.dev/chainguard/python
+  IMAGE: cgr.dev/datatomix.com/python
 
 jobs:
   diff:
@@ -29,18 +29,27 @@ jobs:
           chmod +x /usr/local/bin/chainctl
           chainctl version
 
-      # ── Authenticate to cgr.dev ─────────────────────────────────────────────
-      # Generate a pull token on your laptop with:
-      #   chainctl auth configure-docker --pull-token
-      # Copy the token value and store it as the CHAINGUARD_TOKEN secret in
-      # your GitHub repo (Settings → Secrets → Actions → New repository secret).
-      # The username for cgr.dev pull tokens is always "_token".
+      # ── Authenticate ────────────────────────────────────────────────────────
+      # Generate credentials on your laptop:
+      #   chainctl auth configure-docker --pull-token --parent datatomix.com
+      # Store the printed username → CHAINGUARD_USERNAME secret
+      # Store the printed password → CHAINGUARD_TOKEN secret
+      #
+      # docker/login-action handles registry pulls (imagetools inspect).
+      # chainctl auth login --identity-token handles the Chainguard API
+      # (SBOM + vuln data fetched by chainctl images diff) — fully headless.
       - name: Log in to Chainguard registry
         uses: docker/login-action@v3
         with:
           registry: cgr.dev
           username: ${{ secrets.CHAINGUARD_USERNAME }}
           password: ${{ secrets.CHAINGUARD_TOKEN }}
+
+      - name: Authenticate chainctl (headless)
+        run: |
+          chainctl auth login \
+            --identity-token "${{ secrets.CHAINGUARD_TOKEN }}" \
+            --headless
 
       # ── Resolve the current live digest ────────────────────────────────────
       - name: Resolve latest digest
