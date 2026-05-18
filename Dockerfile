@@ -1,6 +1,6 @@
 # Pinned to the digest resolved on 2026-05-18.
 # The GitHub Action in this repo will open a PR when a newer build is available.
-FROM cgr.dev/datatomix.com/python:latest@sha256:8e6334c6d8707e29c54273a45f4e2edd3c3eb36b8bd23e74af8ec1e38ec4be4a
+FROM cgr.dev/datatomix.com/python:3.12@sha256:487da2285c17de516d3e10387c6cd5e132d72ba49f422ff6efa6bddf9e2b7079
 
 WORKDIR /app
 
