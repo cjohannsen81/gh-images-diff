@@ -50,9 +50,10 @@ jobs:
       - name: Read pinned digest from Dockerfile
         id: pinned
         run: |
-          DIGEST=$(grep -m1 '^FROM' Dockerfile \
-            | sed 's/.*@//' \
-            | awk '{print $1}')
+          # Handles both:
+          #   FROM image@sha256:...
+          #   FROM image:tag@sha256:...
+          DIGEST=$(grep -m1 '^FROM' Dockerfile | grep -o 'sha256:[a-f0-9]\{64\}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "Pinned: ${DIGEST}"
 
