@@ -45,11 +45,9 @@ jobs:
           username: ${{ secrets.CHAINGUARD_USERNAME }}
           password: ${{ secrets.CHAINGUARD_TOKEN }}
 
-      - name: Authenticate chainctl (headless)
-        run: |
-          chainctl auth login \
-            --identity-token "${{ secrets.CHAINGUARD_TOKEN }}" \
-            --headless
+      # chainctl reads CHAINCTL_AUTH_TOKEN automatically for every command —
+      # no login step needed. The token is the same pull token already stored
+      # as CHAINGUARD_TOKEN.
 
       # ── Resolve the current live digest ────────────────────────────────────
       - name: Resolve latest digest
@@ -87,6 +85,8 @@ jobs:
       - name: Run chainctl images diff
         id: diff
         if: steps.changed.outputs.changed == 'true'
+        env:
+          CHAINCTL_AUTH_TOKEN: ${{ secrets.CHAINGUARD_TOKEN }}
         run: |
           OLD="${{ env.IMAGE }}@${{ steps.pinned.outputs.digest }}"
           NEW="${{ env.IMAGE }}@${{ steps.latest.outputs.digest }}"
