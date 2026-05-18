@@ -93,6 +93,13 @@ jobs:
             echo "New digest available!"
           fi
 
+      # ── Install Grype ──────────────────────────────────────────────────────
+      # chainctl images diff uses Grype internally to scan vulnerabilities.
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+
       # ── Run chainctl images diff ────────────────────────────────────────────
       - name: Run chainctl images diff
         id: diff
