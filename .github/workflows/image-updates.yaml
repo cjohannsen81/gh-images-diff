@@ -1,0 +1,168 @@
+name: Chainguard Image Diff
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  IMAGE: cgr.dev/chainguard/python
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Install chainctl ────────────────────────────────────────────────────
+      # Binary filename is chainctl_linux_x86_64 (not amd64).
+      - name: Install chainctl
+        run: |
+          curl -sSfL https://dl.enforce.dev/chainctl/latest/chainctl_linux_x86_64 \
+            -o /usr/local/bin/chainctl
+          chmod +x /usr/local/bin/chainctl
+          chainctl version
+
+      # ── Authenticate chainctl ───────────────────────────────────────────────
+      # Uses a Chainguard assumable identity bound to this repo's OIDC token.
+      # Create one at console.chainguard.dev and store the ID as a secret.
+      - name: Authenticate
+        uses: chainguard-dev/setup-chainctl@v0.2.2
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
+
+      # ── Resolve the current live digest ────────────────────────────────────
+      - name: Resolve latest digest
+        id: latest
+        run: |
+          DIGEST=$(docker buildx imagetools inspect "${{ env.IMAGE }}:latest" \
+            --format '{{.Manifest.Digest}}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Latest: ${DIGEST}"
+
+      # ── Load the previously pinned digest from the Dockerfile ───────────────
+      - name: Read pinned digest from Dockerfile
+        id: pinned
+        run: |
+          DIGEST=$(grep -m1 '^FROM' Dockerfile \
+            | sed 's/.*@//' \
+            | awk '{print $1}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Pinned: ${DIGEST}"
+
+      # ── Compare ─────────────────────────────────────────────────────────────
+      - name: Check for update
+        id: changed
+        run: |
+          if [[ "${{ steps.pinned.outputs.digest }}" == "${{ steps.latest.outputs.digest }}" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Image is up to date — nothing to do."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "New digest available!"
+          fi
+
+      # ── Run chainctl images diff ────────────────────────────────────────────
+      - name: Run chainctl images diff
+        id: diff
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          OLD="${{ env.IMAGE }}@${{ steps.pinned.outputs.digest }}"
+          NEW="${{ env.IMAGE }}@${{ steps.latest.outputs.digest }}"
+
+          echo "Diffing:"
+          echo "  old: ${OLD}"
+          echo "  new: ${NEW}"
+
+          # -o markdown produces a human-friendly table ready for GitHub issues
+          DIFF=$(chainctl images diff "${OLD}" "${NEW}" -o markdown 2>&1) || true
+
+          {
+            echo 'result<<EOF'
+            echo "${DIFF}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # ── Write step summary ──────────────────────────────────────────────────
+      - name: Write job summary
+        if: steps.changed.outputs.changed == 'true'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
+          ## 🔄 New Chainguard Python build available
+
+          | | |
+          |---|---|
+          | **Image** | \`${{ env.IMAGE }}\` |
+          | **Pinned digest** | \`${{ steps.pinned.outputs.digest }}\` |
+          | **Latest digest** | \`${{ steps.latest.outputs.digest }}\` |
+
+          ${{ steps.diff.outputs.result }}
+          SUMMARY
+
+      # ── Open or update a GitHub Issue ──────────────────────────────────────
+      - name: Open or update GitHub Issue
+        if: steps.changed.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        env:
+          PINNED: ${{ steps.pinned.outputs.digest }}
+          LATEST: ${{ steps.latest.outputs.digest }}
+          DIFF:   ${{ steps.diff.outputs.result }}
+        with:
+          script: |
+            const image  = process.env.IMAGE  || '${{ env.IMAGE }}';
+            const pinned = process.env.PINNED;
+            const latest = process.env.LATEST;
+            const diff   = process.env.DIFF;
+
+            const title = `[chainguard] New python build: ${latest.slice(0, 19)}`;
+
+            const body = [
+              `## 🔄 New Chainguard Python build`,
+              ``,
+              `| | |`,
+              `|---|---|`,
+              `| **Image** | \`${image}\` |`,
+              `| **Current digest** | \`${pinned}\` |`,
+              `| **New digest** | \`${latest}\` |`,
+              ``,
+              `### Package diff`,
+              ``,
+              diff,
+              ``,
+              `### Update your Dockerfile`,
+              ``,
+              '```bash',
+              `sed -i 's|${pinned}|${latest}|g' Dockerfile`,
+              '```',
+            ].join('\n');
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner:  context.repo.owner,
+              repo:   context.repo.repo,
+              state:  'open',
+              labels: 'chainguard-diff',
+            });
+
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner:  context.repo.owner,
+                repo:   context.repo.repo,
+                title,
+                body,
+                labels: ['chainguard-diff'],
+              });
+            }
