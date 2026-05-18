@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # needed for chainguard-dev/setup-chainctl OIDC exchange
   issues: write
 
 env:
@@ -45,15 +46,20 @@ jobs:
           username: ${{ secrets.CHAINGUARD_USERNAME }}
           password: ${{ secrets.CHAINGUARD_TOKEN }}
 
-      # ── Authenticate chainctl (headless) ───────────────────────────────────
-      # --identity-token expects a file path, not an inline value.
-      # Write the token to a temp file, login, then remove it.
+      # ── Authenticate chainctl ───────────────────────────────────────────────
+      # Uses GitHub Actions OIDC to exchange for a Chainguard token — fully
+      # headless. Requires a Chainguard assumable identity bound to this repo.
+      #
+      # One-time setup on your laptop:
+      #   1. chainctl iam identities create github <name> \
+      #        --github-repo=<org>/<repo> \
+      #        --github-ref=refs/heads/main \
+      #        --role=viewer
+      #   2. Copy the printed identity ID → secret CHAINGUARD_IDENTITY
       - name: Authenticate chainctl
-        run: |
-          TOKEN_FILE=$(mktemp)
-          echo "${{ secrets.CHAINGUARD_TOKEN }}" > "${TOKEN_FILE}"
-          chainctl auth login --identity-token="${TOKEN_FILE}"
-          rm -f "${TOKEN_FILE}" 
+        uses: chainguard-dev/setup-chainctl@v0.2.2
+        with:
+          identity: ${{ secrets.CHAINGUARD_IDENTITY }}
 
       # ── Resolve the current live digest ────────────────────────────────────
       - name: Resolve latest digest
